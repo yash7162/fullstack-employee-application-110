@@ -1,0 +1,61 @@
+pipeline {
+    agent any 
+
+    stages {
+        stage('Cleaning Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
+        stage('Checkout from Git') {
+            steps {
+                git branch: 'main', url: 'https://github.com/CloudTechDevOps/fullstack-employee-application.git'
+            }
+        }
+        stage("Docker Image Build") {
+            steps {
+                script {
+                    dir('client') {
+                        sh 'docker system prune -f'
+                        sh 'docker container prune -f'
+                        sh 'docker build -t frontend .'
+                    }
+                }
+            }
+        }
+        stage("ECR Image Pushing") {
+            steps {
+                script {
+                    sh '''
+                    aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 8348483473844.dkr.ecr.ap-south-1.amazonaws.com
+                    docker tag frontend:latest 8438748738344.dkr.ecr.ap-south-1.amazonaws.com/frontend:${BUILD_NUMBER}
+                    docker push 8348783474844.dkr.ecr.ap-south-1.amazonaws.com/frontend:${BUILD_NUMBER}
+                    '''
+                }
+            }
+        }
+        stage('Update Deployment file') {
+            environment {
+                GIT_REPO_NAME = "fullstack-employee-application"
+                GIT_USER_NAME = "CloudTechDevOps"
+            }
+            steps {
+                dir('employeemanagement-frontend') {
+                    withCredentials([string(credentialsId: 'git_token', variable: 'git_token')]) {
+                        sh '''
+                            git config user.email "cloud87777@gmail.com"
+                            git config user.name "CloudTechDevOps"
+                            BUILD_NUMBER=${BUILD_NUMBER}
+                            echo $BUILD_NUMBER
+                            sed -i "s#image:.*#image: 442426876097.dkr.ecr.ap-south-1.amazonaws.com/frontend:$BUILD_NUMBER#g" frontend.yml
+                            git add .
+                            git commit -m "Update deployment Image to version \${BUILD_NUMBER}"
+                            git push https://${git_token}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
+        
+                        '''
+                    }
+                }
+            }
+        }
+    }
+}
